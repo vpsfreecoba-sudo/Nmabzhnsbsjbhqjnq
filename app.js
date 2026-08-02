@@ -408,7 +408,7 @@ async function renderHistoryList() {
 }
 
 // ============================================================
-//  FFMPEG ENCODER — CEPAT & BERKUALITAS (preset veryfast, crf 23)
+//  FFMPEG ENCODER — CDN RESMI (UNPKG) + PRESET VERYFAST
 // ============================================================
 let ffmpegInstance = null;
 
@@ -422,16 +422,14 @@ async function getFFmpeg() {
   if (ffmpegInstance) return ffmpegInstance;
   const { FFmpeg } = await import("@ffmpeg/ffmpeg");
   ffmpegInstance = new FFmpeg();
-  const isMultiThread = typeof SharedArrayBuffer !== "undefined" && window.crossOriginIsolated;
-  const repoBase = location.pathname.substring(0, location.pathname.lastIndexOf("/") + 1) || "/";
-  const absBase = new URL(repoBase, location.href).href;
-  const baseURL = `${absBase}${isMultiThread ? "ffmpeg-core-mt" : "ffmpeg-core"}`;
+
+  // 🔥 Pakai CDN UNPKG resmi — STABIL, TIDAK PERLU FILE WASM DI VERCEL
+  const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
+
   ffmpegInstance.on("progress", ({ progress }) => setProgress(Math.round(progress * 100)));
   await ffmpegInstance.load({
     coreURL: `${baseURL}/ffmpeg-core.js`,
     wasmURL: `${baseURL}/ffmpeg-core.wasm`,
-    classWorkerURL: `${absBase}ffmpeg-worker/worker.js`,
-    ...(isMultiThread ? { workerURL: `${baseURL}/ffmpeg-core.worker.js` } : {})
   });
   return ffmpegInstance;
 }
@@ -447,7 +445,7 @@ async function encodeVideoWithFFmpeg(file, targetRes = 1080) {
 
     await instance.writeFile(inputName, await fetchFile(file));
 
-    // 🔥 Parameter optimal: veryfast + crf 23 (cepat & kualitas bagus)
+    // 🔥 VERYFAST + CRF 23 — CEPAT & KUALITAS BAGUS UNTUK TIKTOK
     const filter = `scale=${targetRes}:-2:flags=lanczos`;
     const args = [
       "-y", "-loglevel", "error",
@@ -464,7 +462,7 @@ async function encodeVideoWithFFmpeg(file, targetRes = 1080) {
       outputName
     ];
 
-    logMessage("Encoding video (veryfast, CRF 23)...", "info");
+    logMessage("Encoding video (veryfast, CRF 23) — using CDN WASM...", "info");
     showProgress();
     await instance.exec(args);
 
