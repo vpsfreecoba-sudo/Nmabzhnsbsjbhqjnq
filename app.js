@@ -408,44 +408,61 @@ async function renderHistoryList() {
 }
 
 // ============================================================
-//  FFMPEG ENCODER — CDN RESMI (UNPKG) + PRESET VERYFAST
+//  FFMPEG ENCODER — CDN UNPKG + DETAILED ERROR LOGGING
 // ============================================================
 let ffmpegInstance = null;
 
 async function destroyFFmpeg() {
   if (!ffmpegInstance) return;
-  try { await ffmpegInstance.terminate(); } catch {}
+  try { await ffmpegInstance.terminate(); } catch (e) {
+    logMessage(`FFmpeg terminate error: ${e?.message || e}`, "warning");
+  }
   ffmpegInstance = null;
 }
 
 async function getFFmpeg() {
   if (ffmpegInstance) return ffmpegInstance;
-  const { FFmpeg } = await import("@ffmpeg/ffmpeg");
-  ffmpegInstance = new FFmpeg();
+  try {
+    // Import FFmpeg dynamically
+    const { FFmpeg } = await import("@ffmpeg/ffmpeg");
+    ffmpegInstance = new FFmpeg();
 
-  // 🔥 Pakai CDN UNPKG resmi — STABIL, TIDAK PERLU FILE WASM DI VERCEL
-  const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
+    // Gunakan CDN UNPKG resmi
+    const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
 
-  ffmpegInstance.on("progress", ({ progress }) => setProgress(Math.round(progress * 100)));
-  await ffmpegInstance.load({
-    coreURL: `${baseURL}/ffmpeg-core.js`,
-    wasmURL: `${baseURL}/ffmpeg-core.wasm`,
-  });
-  return ffmpegInstance;
+    ffmpegInstance.on("progress", ({ progress }) => setProgress(Math.round(progress * 100)));
+
+    logMessage("Loading FFmpeg core from CDN...", "info");
+    await ffmpegInstance.load({
+      coreURL: `${baseURL}/ffmpeg-core.js`,
+      wasmURL: `${baseURL}/ffmpeg-core.wasm`,
+    });
+
+    logMessage("FFmpeg core loaded successfully.", "success");
+    return ffmpegInstance;
+  } catch (err) {
+    // Tangkap detail error
+    const msg = err?.message || String(err);
+    const stack = err?.stack || "";
+    logMessage(`FFmpeg load error: ${msg}`, "error");
+    if (stack) logMessage(`Stack: ${stack.slice(0, 200)}`, "error");
+    throw new Error(`FFmpeg initialization failed: ${msg}`);
+  }
 }
 
 async function encodeVideoWithFFmpeg(file, targetRes = 1080) {
-  const { fetchFile } = await import("@ffmpeg/util");
   let instance;
   try {
+    const { fetchFile } = await import("@ffmpeg/util");
     instance = await getFFmpeg();
+
     const ext = isMovFile(file) ? ".mov" : ".mp4";
     const inputName = `input${ext}`;
     const outputName = "output.mp4";
 
+    logMessage("Writing input file to FFmpeg FS...", "info");
     await instance.writeFile(inputName, await fetchFile(file));
 
-    // 🔥 VERYFAST + CRF 23 — CEPAT & KUALITAS BAGUS UNTUK TIKTOK
     const filter = `scale=${targetRes}:-2:flags=lanczos`;
     const args = [
       "-y", "-loglevel", "error",
@@ -462,20 +479,34 @@ async function encodeVideoWithFFmpeg(file, targetRes = 1080) {
       outputName
     ];
 
-    logMessage("Encoding video (veryfast, CRF 23) — using CDN WASM...", "info");
+    logMessage("Running FFmpeg encode (veryfast, CRF 23)...", "info");
     showProgress();
     await instance.exec(args);
 
+    logMessage("Reading output file...", "info");
     const data = await instance.readFile(outputName);
+    if (!data || data.length < 100) {
+      throw new Error("Output file is empty or too small.");
+    }
+
+    // Cleanup
     await instance.deleteFile(inputName).catch(() => {});
     await instance.deleteFile(outputName).catch(() => {});
     await destroyFFmpeg();
 
-    if (!data || data.length < 100) throw new Error("Encoded output is empty.");
     return data.buffer;
   } catch (err) {
+    // Cleanup on error
+    try { await instance?.deleteFile("input.mp4").catch(() => {}); } catch {}
+    try { await instance?.deleteFile("output.mp4").catch(() => {}); } catch {}
     await destroyFFmpeg();
-    throw err;
+
+    // Log detail error
+    const msg = err?.message || String(err);
+    const stack = err?.stack || "";
+    logMessage(`Encode error: ${msg}`, "error");
+    if (stack) logMessage(`Stack: ${stack.slice(0, 200)}`, "error");
+    throw new Error(`Encoding failed: ${msg}`);
   }
 }
 
@@ -599,7 +630,8 @@ patchBtn.addEventListener("click", async () => {
       if (isCancelled) { item.status = "pending"; break; }
       item.status = "error";
       item.checked = false;
-      logMessage(`  Error: ${err.message}`, "error");
+      const msg = err?.message || String(err);
+      logMessage(`  Error: ${msg}`, "error");
     }
     renderFileList();
   }
