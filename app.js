@@ -2,15 +2,7 @@ import { clearAllRecords, deleteRecord, getAllRecords, saveRecord } from "./db.j
 import { initChangelog } from "./src/changelog.mjs";
 
 // ============================================================
-//  KONSTANTA API (dari content.js)
-// ============================================================
-const API_BASE = "https://api.midx.app";
-const CLIENT_TOKEN = "midx_lite_v1_4Yb9sN2qR8pKx7zQ";
-const UPLOAD_METHOD = "inject-v1";
-const REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
-
-// ============================================================
-//  GLOBAL VARIABLES & UI REFS
+//  KONSTANTA & UI REFERENSI
 // ============================================================
 const outputSuffix = "METHOD MINZHA @xd_minn";
 const supportedMimeTypes = ["video/mp4", "video/quicktime", "video/x-quicktime"];
@@ -35,10 +27,6 @@ let isCancelled = false;
 let processingFiles = false;
 let lastPatchedVfi = false;
 let lastPatchedRes = "1080";
-
-let currentJobId = null;
-let currentRequestController = null;
-let cancelRequested = false;
 
 // ============================================================
 //  UTILITY (tetap)
@@ -420,116 +408,102 @@ async function renderHistoryList() {
 }
 
 // ============================================================
-//  API CLIENT (dari content.js)
+//  FFMPEG ENCODER — PRESET ULTRAFAST (Cepat)
 // ============================================================
-async function fetchWithTimeout(url, options = {}, { track = true } = {}) {
-  if (typeof AbortController !== "function") return fetch(url, options);
-  const controller = new AbortController();
-  if (track) currentRequestController = controller;
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+let ffmpegInstance = null;
+
+async function destroyFFmpeg() {
+  if (!ffmpegInstance) return;
+  try { await ffmpegInstance.terminate(); } catch {}
+  ffmpegInstance = null;
+}
+
+async function getFFmpeg() {
+  if (ffmpegInstance) return ffmpegInstance;
+  const { FFmpeg } = await import("@ffmpeg/ffmpeg");
+  ffmpegInstance = new FFmpeg();
+  const isMultiThread = typeof SharedArrayBuffer !== "undefined" && window.crossOriginIsolated;
+  const repoBase = location.pathname.substring(0, location.pathname.lastIndexOf("/") + 1) || "/";
+  const absBase = new URL(repoBase, location.href).href;
+  const baseURL = `${absBase}${isMultiThread ? "ffmpeg-core-mt" : "ffmpeg-core"}`;
+  ffmpegInstance.on("progress", ({ progress }) => setProgress(Math.round(progress * 100)));
+  await ffmpegInstance.load({
+    coreURL: `${baseURL}/ffmpeg-core.js`,
+    wasmURL: `${baseURL}/ffmpeg-core.wasm`,
+    classWorkerURL: `${absBase}ffmpeg-worker/worker.js`,
+    ...(isMultiThread ? { workerURL: `${baseURL}/ffmpeg-core.worker.js` } : {})
+  });
+  return ffmpegInstance;
+}
+
+async function encodeVideoWithFFmpeg(file, targetRes = 1080) {
+  const { fetchFile } = await import("@ffmpeg/util");
+  let instance;
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-    if (currentRequestController === controller) currentRequestController = null;
+    instance = await getFFmpeg();
+    const ext = isMovFile(file) ? ".mov" : ".mp4";
+    const inputName = `input${ext}`;
+    const outputName = "output.mp4";
+
+    await instance.writeFile(inputName, await fetchFile(file));
+
+    // 🔥 SUPER CEPAT: ultrafast + crf 28
+    const filter = `scale=${targetRes}:-2:flags=lanczos`;
+    const args = [
+      "-y", "-loglevel", "error",
+      "-i", inputName,
+      "-vf", filter,
+      "-c:v", "libx264",
+      "-preset", "ultrafast",
+      "-crf", "28",
+      "-c:a", "aac",
+      "-b:a", "128k",
+      "-movflags", "+faststart",
+      "-video_track_timescale", "90000",
+      "-threads", "0",
+      outputName
+    ];
+
+    logMessage("Encoding with ultrafast preset (high speed)...", "info");
+    showProgress();
+    await instance.exec(args);
+
+    const data = await instance.readFile(outputName);
+    await instance.deleteFile(inputName).catch(() => {});
+    await instance.deleteFile(outputName).catch(() => {});
+    await destroyFFmpeg();
+
+    if (!data || data.length < 100) throw new Error("Encoded output is empty.");
+    return data.buffer;
+  } catch (err) {
+    await destroyFFmpeg();
+    throw err;
   }
-}
-
-async function uploadAndRender(file) {
-  const form = new FormData();
-  form.append("video", file, file.name || "video.mp4");
-  form.append("method", UPLOAD_METHOD);
-  form.append("preset", "protect");
-  form.append("encoder", "off");
-  form.append("audioQuality", "256k");
-
-  logMessage("Uploading video to processing server...", "info");
-  const create = await fetchWithTimeout(`${API_BASE}/api/jobs`, {
-    method: "POST",
-    body: form,
-    headers: { "X-Midx-Client": CLIENT_TOKEN },
-  });
-  if (!create.ok) {
-    let detail = "";
-    try { detail = (await create.json()).error || ""; } catch {}
-    throw new Error(detail || `Upload failed (${create.status})`);
-  }
-  let job = await create.json();
-  currentJobId = job.id || null;
-  logMessage(`Job ID: ${currentJobId}`, "info");
-
-  while (job.status !== "done") {
-    if (cancelRequested || isCancelled) {
-      await cancelCurrentJob();
-      throw new Error("Processing cancelled by user");
-    }
-    if (job.status === "error") {
-      throw new Error(job.error || "Processing failed on server");
-    }
-    const ratio = Math.max(0.05, Math.min(0.95, job.progress || 0));
-    setProgress(Math.round(ratio * 100));
-    logMessage(`Processing video... ${Math.round(ratio * 100)}%`, "info");
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    const statusRes = await fetchWithTimeout(`${API_BASE}/api/jobs/${job.id}`, {
-      cache: "no-store",
-      headers: { "X-Midx-Client": CLIENT_TOKEN },
-    });
-    if (!statusRes.ok) throw new Error(`Status check failed (${statusRes.status})`);
-    job = await statusRes.json();
-    currentJobId = job.id || currentJobId;
-  }
-
-  if (!job.resultUrl || !job.resultToken) throw new Error("Result token missing");
-  logMessage("Downloading processed video...", "info");
-  const result = await fetchWithTimeout(`${API_BASE}${job.resultUrl}`, {
-    cache: "no-store",
-    headers: {
-      Authorization: `Bearer ${job.resultToken}`,
-      "X-Midx-Client": CLIENT_TOKEN,
-    },
-  });
-  if (!result.ok) throw new Error(`Finalization failed (${result.status})`);
-  const blob = await result.blob();
-  return new File([blob], `method_minzha_${Date.now()}.mp4`, { type: "video/mp4", lastModified: Date.now() });
-}
-
-async function cancelCurrentJob() {
-  const jobId = currentJobId;
-  try { currentRequestController?.abort?.(); } catch {}
-  if (jobId) {
-    try {
-      await fetch(`${API_BASE}/api/jobs/${jobId}/cancel`, {
-        method: "POST",
-        cache: "no-store",
-        headers: { "X-Midx-Client": CLIENT_TOKEN },
-      });
-      logMessage("Cancellation request sent to server.", "warning");
-    } catch {}
-  }
-  currentJobId = null;
-  currentRequestController = null;
 }
 
 // ============================================================
-//  PATCH SINGLE FILE (menggunakan API)
+//  PATCH SINGLE FILE
 // ============================================================
 async function patchSingleFile(item) {
-  const resultFile = await uploadAndRender(item.file);
-  if (isCancelled || cancelRequested) throw new Error("Cancelled");
+  const resolutionEl = document.getElementById("outputResolution");
+  const targetRes = resolutionEl ? Number.parseInt(resolutionEl.value, 10) : 1080;
 
-  const buffer = await resultFile.arrayBuffer();
-  if (!buffer || buffer.byteLength === 0) throw new Error("Result file is empty");
+  const buffer = await encodeVideoWithFFmpeg(item.file, targetRes);
+  if (isCancelled) throw new Error("Cancelled");
 
   let thumbnail = null;
-  try { thumbnail = await captureVideoFrame(resultFile); } catch {}
+  try {
+    const blob = new Blob([buffer], { type: "video/mp4" });
+    thumbnail = await captureVideoFrame(blob);
+  } catch {}
   if (!thumbnail) {
     try { thumbnail = await captureVideoFrame(item.file); } catch {}
   }
 
   return {
     finalBuffer: buffer,
-    outputName: resultFile.name,
-    mimeType: resultFile.type,
+    outputName: getOutputFilename(item.file),
+    mimeType: "video/mp4",
     prePatchBuffer: null,
     movThumbnail: thumbnail,
   };
@@ -580,11 +554,10 @@ patchBtn.addEventListener("click", async () => {
   clearBtn.disabled = false;
   showProgress();
   isCancelled = false;
-  cancelRequested = false;
 
   let successCount = 0;
   for (let i = 0; i < pendingItems.length; i++) {
-    if (isCancelled || cancelRequested) break;
+    if (isCancelled) break;
     const item = pendingItems[i];
     setProgress(Math.round((i / pendingItems.length) * 100));
 
@@ -594,7 +567,7 @@ patchBtn.addEventListener("click", async () => {
 
     try {
       const result = await patchSingleFile(item);
-      if (isCancelled || cancelRequested) { item.status = "pending"; break; }
+      if (isCancelled) { item.status = "pending"; break; }
       item.status = "success";
       item.patchedBuffer = result.finalBuffer;
       item.outputName = result.outputName;
@@ -622,10 +595,10 @@ patchBtn.addEventListener("click", async () => {
 
       if (i < pendingItems.length - 1) {
         await new Promise(r => setTimeout(r, 600));
-        if (isCancelled || cancelRequested) break;
+        if (isCancelled) break;
       }
     } catch (err) {
-      if (isCancelled || cancelRequested) { item.status = "pending"; break; }
+      if (isCancelled) { item.status = "pending"; break; }
       item.status = "error";
       item.checked = false;
       logMessage(`  Error: ${err.message}`, "error");
@@ -633,7 +606,7 @@ patchBtn.addEventListener("click", async () => {
     renderFileList();
   }
 
-  if (isCancelled || cancelRequested) {
+  if (isCancelled) {
     for (const item of pendingItems) {
       if (item.status === "processing" || item.status === "pending") item.status = "pending";
     }
@@ -659,7 +632,7 @@ patchBtn.addEventListener("click", async () => {
 });
 
 // ============================================================
-//  EVENT LISTENER LAINNYA (drop, drag, click, dll.)
+//  EVENT LISTENER LAINNYA
 // ============================================================
 dropZone.addEventListener("click", () => fileInput.click());
 fileInput.addEventListener("change", (e) => {
@@ -670,9 +643,8 @@ fileInput.addEventListener("change", (e) => {
 clearBtn.addEventListener("click", async (e) => {
   e.stopPropagation();
   if (currentFlowState === "patching") {
-    cancelRequested = true;
     isCancelled = true;
-    await cancelCurrentJob();
+    await destroyFFmpeg();
     logMessage("Cancelling...", "warning");
     return;
   }
@@ -703,7 +675,7 @@ clearHistoryBtn.addEventListener("click", async () => {
 });
 
 // ============================================================
-//  MODAL TIKTOK & VFI (dummy, tidak dipakai)
+//  MODAL TIKTOK & VFI (dummy)
 // ============================================================
 const vfiModal = document.getElementById("vfiModal");
 const enableInterpolation = document.getElementById("enableInterpolation");
@@ -721,7 +693,6 @@ initializeApp();
 const changelogContainer = document.getElementById("changelogContainer");
 if (changelogContainer) initChangelog(changelogContainer);
 
-// Popup follow (tetap)
 window.addEventListener("load", function () {
   const popup = document.getElementById("popupFollow");
   if (!popup) return;
