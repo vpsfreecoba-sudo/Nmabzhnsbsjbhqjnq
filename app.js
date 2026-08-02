@@ -2,7 +2,7 @@ import { clearAllRecords, deleteRecord, getAllRecords, saveRecord } from "./db.j
 import { initChangelog } from "./src/changelog.mjs";
 
 // ============================================================
-//  KONSTANTA & UI REFERENSI
+//  KONSTANTA & UI REFS
 // ============================================================
 const outputSuffix = "METHOD MINZHA @xd_minn";
 const supportedMimeTypes = ["video/mp4", "video/quicktime", "video/x-quicktime"];
@@ -29,7 +29,7 @@ let lastPatchedVfi = false;
 let lastPatchedRes = "1080";
 
 // ============================================================
-//  UTILITY (tetap)
+//  UTILITY
 // ============================================================
 function adjustMobileLayout() {
   const isMobile = window.innerWidth <= 900;
@@ -139,7 +139,7 @@ function getStatusLabel(status) {
 }
 
 // ============================================================
-//  THUMBNAIL CAPTURE (tetap)
+//  THUMBNAIL CAPTURE
 // ============================================================
 const FRAME_CAPTURE_TIMEOUT_MS = 5000;
 const MAX_THUMBNAIL_DIMENSION = 120;
@@ -197,7 +197,7 @@ function captureVideoFrame(file) {
 }
 
 // ============================================================
-//  RENDER FILE LIST & HISTORY (tetap)
+//  RENDER FILE LIST & HISTORY
 // ============================================================
 function renderFileList() {
   fileListEl.innerHTML = "";
@@ -408,7 +408,7 @@ async function renderHistoryList() {
 }
 
 // ============================================================
-//  FFMPEG ENCODER — PRESET ULTRAFAST (Cepat)
+//  FFMPEG ENCODER — CEPAT & BERKUALITAS (preset veryfast, crf 23)
 // ============================================================
 let ffmpegInstance = null;
 
@@ -447,24 +447,24 @@ async function encodeVideoWithFFmpeg(file, targetRes = 1080) {
 
     await instance.writeFile(inputName, await fetchFile(file));
 
-    // 🔥 SUPER CEPAT: ultrafast + crf 28
+    // 🔥 Parameter optimal: veryfast + crf 23 (cepat & kualitas bagus)
     const filter = `scale=${targetRes}:-2:flags=lanczos`;
     const args = [
       "-y", "-loglevel", "error",
       "-i", inputName,
       "-vf", filter,
       "-c:v", "libx264",
-      "-preset", "ultrafast",
-      "-crf", "28",
+      "-preset", "veryfast",
+      "-crf", "23",
       "-c:a", "aac",
-      "-b:a", "128k",
+      "-b:a", "192k",
       "-movflags", "+faststart",
       "-video_track_timescale", "90000",
       "-threads", "0",
       outputName
     ];
 
-    logMessage("Encoding with ultrafast preset (high speed)...", "info");
+    logMessage("Encoding video (veryfast, CRF 23)...", "info");
     showProgress();
     await instance.exec(args);
 
@@ -675,9 +675,8 @@ clearHistoryBtn.addEventListener("click", async () => {
 });
 
 // ============================================================
-//  MODAL TIKTOK & VFI (dummy)
+//  MODAL TIKTOK & VFI (disable)
 // ============================================================
-const vfiModal = document.getElementById("vfiModal");
 const enableInterpolation = document.getElementById("enableInterpolation");
 if (enableInterpolation) {
   enableInterpolation.checked = false;
