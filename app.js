@@ -408,7 +408,7 @@ async function renderHistoryList() {
 }
 
 // ============================================================
-//  FFMPEG ENCODER (LOKAL) — Menggunakan parameter dari content.js
+//  FFMPEG ENCODER (LOKAL) — CEPAT dengan preset veryfast
 // ============================================================
 let ffmpegInstance = null;
 
@@ -447,27 +447,24 @@ async function encodeVideoWithFFmpeg(file, targetRes = 1080) {
 
     await instance.writeFile(inputName, await fetchFile(file));
 
-    // Parameter encoding dari content.js:
-    // preset: 'protect' → kualitas tinggi (CRF 18, preset medium)
-    // encoder: 'off' → tetap pakai H.264 (libx264)
-    // audioQuality: '256k' → audio bitrate 256k
-    // Juga tambahkan faststart dan timescale untuk TikTok
+    // 🔥 PARAMETER CEPAT: preset veryfast + crf 23 (standar)
     const filter = `scale=${targetRes}:-2:flags=lanczos`;
     const args = [
       "-y", "-loglevel", "error",
       "-i", inputName,
       "-vf", filter,
       "-c:v", "libx264",
-      "-preset", "medium",
-      "-crf", "18",
+      "-preset", "veryfast",   // ← lebih cepat dari medium
+      "-crf", "23",            // ← standar, kualitas tetap bagus
       "-c:a", "aac",
       "-b:a", "256k",
       "-movflags", "+faststart",
       "-video_track_timescale", "90000",
+      "-threads", "0",         // ← gunakan semua core CPU
       outputName
     ];
 
-    logMessage("Encoding video with high quality (CRF 18, 256k audio)...", "info");
+    logMessage("Encoding with fast preset (veryfast, CRF 23)...", "info");
     showProgress();
     await instance.exec(args);
 
@@ -491,11 +488,9 @@ async function patchSingleFile(item) {
   const resolutionEl = document.getElementById("outputResolution");
   const targetRes = resolutionEl ? Number.parseInt(resolutionEl.value, 10) : 1080;
 
-  // Encode video dengan FFmpeg
   const buffer = await encodeVideoWithFFmpeg(item.file, targetRes);
   if (isCancelled) throw new Error("Cancelled");
 
-  // Ambil thumbnail dari hasil encode
   let thumbnail = null;
   try {
     const blob = new Blob([buffer], { type: "video/mp4" });
@@ -580,7 +575,6 @@ patchBtn.addEventListener("click", async () => {
       item.checked = true;
       successCount++;
 
-      // Simpan ke riwayat
       try {
         const blob = new Blob([result.finalBuffer], { type: result.mimeType });
         let thumb = result.movThumbnail;
@@ -690,7 +684,6 @@ if (enableInterpolation) {
   enableInterpolation.disabled = true;
   enableInterpolation.parentElement.style.opacity = "0.5";
 }
-// (Tidak perlu VFI, jadi kita nonaktifkan)
 
 // ============================================================
 //  INISIALISASI
