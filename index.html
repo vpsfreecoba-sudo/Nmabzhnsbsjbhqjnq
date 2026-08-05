@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>METHOD MINZHA</title>
+<meta name="description" content="METHOD MINZHA - Alat untuk menjaga kualitas video saat diunggah ke TikTok.">
+<link href="https://fonts.googleapis.com/css2?family=TikTok+Sans:wght@300..900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect x=%2212%22 y=%2212%22 width=%2276%22 height=%2276%22 rx=%2216%22 fill=%22%23000000%22/><rect x=%224%22 y=%224%22 width=%2276%22 height=%2276%22 rx=%2216%22 fill=%22%2300bfff%22/%3E%3Ctext x=%2242%22 y=%2260%22 font-family=%22'JetBrains Mono',monospace%22 font-weight=%22900%22 font-size=%2252%22 fill=%22%23000000%22 text-anchor=%22middle%22>M</text></svg>">
+<link rel="stylesheet" href="style.css">
+<script>if(!window.crossOriginIsolated){window.SharedArrayBuffer=undefined}</script>
+<script src="./coi-serviceworker.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon@4.6.0/fonts/remixicon.css">
+<script type="importmap">{"imports":{"@ffmpeg/util":"https://esm.sh/@ffmpeg/util@0.12.2","@ffmpeg/ffmpeg":"https://esm.sh/@ffmpeg/ffmpeg@0.12.15"}}</script>
+</head>
+<body>
+
+<!-- POPUP FOLLOW -->
+<div class="popup-overlay" id="popupFollow">
+<div class="popup-card">
+<button class="popup-close" id="popupClose"><i class="ri-close-fill"></i></button>
+<div class="popup-icon" id="popupIconWrap"><i class="ri-heart-3-fill popup-icon-fallback"></i><img class="popup-avatar" id="popupAvatar" alt="@xd_minn" referrerpolicy="no-referrer"></div>
+<div class="popup-title">Follow Dev xd_minn</div>
+<div class="popup-desc">Follow & join biar gak ketinggalan update terbaru!</div>
+<div class="popup-buttons">
+<a class="popup-btn popup-btn-tiktok" href="https://www.tiktok.com/@xd_minn" target="_blank" rel="noopener noreferrer"><i class="ri-tiktok-fill"></i> Follow @xd_minn</a>
+<a class="popup-btn popup-btn-wa" href="https://whatsapp.com/channel/0029VbBfeEYLdQeeaWTfqY3E" target="_blank" rel="noopener noreferrer"><i class="ri-whatsapp-fill"></i> Join Saluran WA</a>
+</div>
+<button class="popup-btn popup-btn-later" id="popupLater">Nanti aja</button>
+</div>
+</div>
+
+<div class="page">
+<div class="panel panel-header"><div class="header"><div class="header-title">METHOD <span>MINZHA</span></div><div class="header-subtitle">Unggah video TikTok tanpa blur &middot; Mesin bypass kepadatan frame.</div></div></div>
+<div class="container">
+<div class="panel panel-left"><div class="control-box"><div class="interpolator-box"><div class="interpolator-header"><span class="interpolator-title">PENGATURAN VIDEO</span></div><div class="interpolator-info"><div class="interpolator-note"><i class="ri-cpu-fill"></i><span>Kecepatan proses tergantung pada perangkat Anda. CPU multi-core disarankan agar hasil lebih cepat.</span></div></div></div></div></div>
+<div class="panel panel-right">
+<div class="drop-zone" id="dropZone"><div class="brutalist-upload-box"><i class="ri-upload-2-fill"></i></div><div class="drop-text"><div class="drop-text-primary">DROP VIDEO DI SINI</div><div class="drop-text-secondary">ATAU <span>PILIH FILE</span> DARI PERANGKAT &middot; MP4 / MOV</div></div></div>
+<div class="queue-and-actions-wrapper">
+<div class="queue-container"><div class="queue-header"><span class="queue-title">ANTRIAN PROSES</span></div><div class="file-list" id="fileList"></div></div>
+<div class="control-actions">
+<div class="btn-row"><button class="btn btn-clear" id="clearBtn">Hapus</button><button class="btn btn-patch" id="patchBtn" disabled><span>Proses Video</span></button></div>
+<a class="btn btn-tiktok" href="https://www.tiktok.com/tiktokstudio/upload" target="_blank" rel="noopener noreferrer">Unggah ke TikTok Studio</a>
+<div class="upload-note"><i class="ri-information-fill"></i><span>Unggah video yang sudah diproses melalui TikTok Studio web agar bypass penjagaan kualitas bekerja dengan baik.</span></div>
+<div class="tutorial-box"><div class="tutorial-header"><i class="ri-bookmark-3-fill"></i><span>CARA UPLOAD KE TIKTOK</span></div><ol class="tutorial-list"><li><strong>Download hasil video di atas</strong></li><li><strong>Buka TikTok Web di chrome manapun bisa</strong></li><li><strong>Upload video seperti biasa</strong></li><li><strong>JANGAN pilih PRIVATE langsung upload aja</strong></li></ol></div>
+<div class="progress-track" id="progressTrack"><div class="progress-bar" id="progressBar"></div></div>
+</div></div>
+<div class="history-container"><div class="history-header" id="historyHeader"><div class="history-header-left"><span class="history-title">RIWAYAT</span><span class="history-badge" id="historyBadge">0</span></div><button class="history-toggle-btn" id="historyToggleBtn"><i class="ri-arrow-down-s-fill"></i></button></div><div class="history-drawer" id="historyDrawer"><div class="history-list" id="historyList"></div><div class="history-actions"><button class="btn-clear-history" id="clearHistoryBtn">Hapus Riwayat</button></div></div></div>
+<input type="file" id="fileInput" accept="video/mp4,video/quicktime,.mp4,.mov" multiple>
+</div>
+<div class="panel panel-log"><div class="log-header"><span class="log-title">LOG STATUS SISTEM</span><span class="log-copy-toast" id="copyLogToast">Disalin</span><button class="log-copy-btn" id="copyLogBtn"><i class="ri-clipboard-fill"></i></button></div><div class="status-log" id="statusLog"></div></div>
+</div></div>
+
+<div class="footer">Dibuat oleh <span>Minzha</span> &middot; <a href="https://www.tiktok.com/@xd_minn" target="_blank" rel="noopener noreferrer">TikTok: @xd_minn</a></div>
+
+<div class="modal-overlay" id="tiktokModal">
+<div class="modal-card">
+<div class="modal-header"><div class="modal-header-left"><i class="ri-upload-2-fill"></i><span class="modal-title">UNGGAH KE TIKTOK STUDIO</span></div><button class="modal-close-btn" id="closeTiktokModalBtn"><i class="ri-close-fill"></i></button></div>
+<div class="modal-body">
+<div class="modal-warning-block"><i class="ri-information-fill"></i><span>Aktifkan Mode Desktop Terlebih Dahulu</span></div>
+<ul class="modal-warning-list"><li>Unggah TikTok Studio hanya bekerja di browser mode desktop.</li><li>Di Chrome: tekan menu 3 titik → centang "Situs desktop".</li><li>Di Safari: tekan "AA" di address bar → "Minta Situs Web Desktop".</li><li>Di Samsung Browser: buka menu → pilih "Tampilan desktop".</li><li>Setelah aktif, tekan tombol di bawah untuk membuka TikTok Studio.</li></ul>
+</div>
+<div class="modal-actions"><button class="modal-btn modal-btn-cancel" id="cancelTiktokModalBtn">Batal</button><a class="modal-btn modal-btn-confirm" id="confirmTiktokBtn" href="https://www.tiktok.com/tiktokstudio/upload" target="_blank" rel="noopener noreferrer">Buka TikTok Studio</a></div>
+</div></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
